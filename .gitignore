@@ -1,0 +1,10 @@
+# Binaries
+/mcper
+bin/
+
+# Go
+*.test
+*.out
+
+# Local development
+.DS_Store
