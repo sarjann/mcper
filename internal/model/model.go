@@ -4,7 +4,6 @@ import "time"
 
 const (
 	StateVersion          = 1
-	TrustModeCosign       = "cosign"
 	TrustModeHash         = "hash"
 	SourceTypeTap         = "tap"
 	SourceTypeDirect      = "direct"
@@ -35,13 +34,7 @@ type TapConfig struct {
 }
 
 type TapTrustConfig struct {
-	Mode       string             `json:"mode"`
-	Identities []SigstoreIdentity `json:"identities,omitempty"`
-}
-
-type SigstoreIdentity struct {
-	Issuer  string `json:"issuer"`
-	Subject string `json:"subject"`
+	Mode string `json:"mode"`
 }
 
 type TrustDecision struct {
@@ -82,8 +75,6 @@ type IndexPackage struct {
 type IndexVersion struct {
 	ManifestPath string `json:"manifest"`
 	SHA256       string `json:"sha256,omitempty"`
-	SigPath      string `json:"sig,omitempty"`
-	CertPath     string `json:"cert,omitempty"`
 }
 
 type PackageManifest struct {
@@ -138,7 +129,7 @@ func NewDefaultState() State {
 				URL:         DefaultTapURL,
 				Description: DefaultTapDescription,
 				Trust: TapTrustConfig{
-					Mode: TrustModeCosign,
+					Mode: TrustModeHash,
 				},
 				CreatedAt: now,
 				UpdatedAt: now,

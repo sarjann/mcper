@@ -461,9 +461,6 @@ type TapAddRequest struct {
 	Name        string
 	URL         string
 	Description string
-	TrustMode   string
-	Issuer      string
-	Subject     string
 }
 
 func (m *Manager) TapAdd(req TapAddRequest) error {
@@ -477,17 +474,7 @@ func (m *Manager) TapAdd(req TapAddRequest) error {
 	if req.URL == "" {
 		return errors.New("tap url is required")
 	}
-	mode := req.TrustMode
-	if mode == "" {
-		mode = model.TrustModeCosign
-	}
-	trust := model.TapTrustConfig{Mode: mode}
-	if mode == model.TrustModeCosign {
-		if req.Issuer == "" || req.Subject == "" {
-			return errors.New("cosign trust mode requires both --issuer and --subject")
-		}
-		trust.Identities = []model.SigstoreIdentity{{Issuer: req.Issuer, Subject: req.Subject}}
-	}
+	trust := model.TapTrustConfig{Mode: model.TrustModeHash}
 
 	now := time.Now().UTC()
 	st.Taps[req.Name] = model.TapConfig{

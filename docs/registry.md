@@ -14,9 +14,7 @@
       "versions": {
         "1.0.0": {
           "manifest": "packages/example/1.0.0/manifest.json",
-          "sha256": "<sha256-of-manifest>",
-          "sig": "packages/example/1.0.0/manifest.sig",
-          "cert": "packages/example/1.0.0/manifest.pem"
+          "sha256": "<sha256-of-manifest>"
         }
       }
     }
@@ -43,22 +41,13 @@
 }
 ```
 
-## Trust modes
+## Integrity checks
 
-- `cosign`: requires trusted signer identity configured in local tap config.
-  - Tap index should include `index.json.sig` and `index.json.pem`.
-  - Each manifest should include signature and certificate files.
-- `hash`: validates only hash pins from `index.json`.
+- `mcper` validates manifest hashes pinned in `index.json`.
+- Signature-based verification is not part of this registry format.
 
 ## Adding a tap
 
 ```bash
-# cosign trust mode
-mcper tap add official git@github.com:org/registry.git \
-  --trust-mode cosign \
-  --issuer https://token.actions.githubusercontent.com \
-  --subject https://github.com/org/registry/.github/workflows/release.yml@refs/heads/main
-
-# hash mode for local/dev
-mcper tap add local /tmp/registry --trust-mode hash
+mcper tap add local /tmp/registry
 ```

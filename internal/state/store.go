@@ -61,6 +61,13 @@ func (s *Store) Load() (model.State, error) {
 	if st.TrustedDirectSources == nil {
 		st.TrustedDirectSources = map[string]model.TrustDecision{}
 	}
+	for name, tap := range st.Taps {
+		// Normalize legacy or unset trust modes to hash-only behavior.
+		if tap.Trust.Mode != model.TrustModeHash {
+			tap.Trust.Mode = model.TrustModeHash
+			st.Taps[name] = tap
+		}
+	}
 	if _, ok := st.Taps[model.DefaultTapName]; !ok {
 		def := model.NewDefaultState()
 		st.Taps[model.DefaultTapName] = def.Taps[model.DefaultTapName]

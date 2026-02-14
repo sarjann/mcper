@@ -19,6 +19,7 @@ func NewRootCmd() *cobra.Command {
 		Use:   "mcper",
 		Short: "Homebrew-style MCP package manager for Codex and Claude Code",
 	}
+	cmd.CompletionOptions.DisableDefaultCmd = true
 
 	cmd.AddCommand(
 		newSearchCmd(),
@@ -313,7 +314,7 @@ func newTapCmd() *cobra.Command {
 }
 
 func newTapAddCmd() *cobra.Command {
-	var description, trustMode, issuer, subject string
+	var description string
 	cmd := &cobra.Command{
 		Use:   "add <name> <url>",
 		Short: "Add or update a package tap",
@@ -327,16 +328,10 @@ func newTapAddCmd() *cobra.Command {
 				Name:        args[0],
 				URL:         args[1],
 				Description: description,
-				TrustMode:   trustMode,
-				Issuer:      issuer,
-				Subject:     subject,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&description, "description", "", "Tap description")
-	cmd.Flags().StringVar(&trustMode, "trust-mode", model.TrustModeCosign, "Trust mode: cosign or hash")
-	cmd.Flags().StringVar(&issuer, "issuer", "", "Sigstore OIDC issuer (required for cosign)")
-	cmd.Flags().StringVar(&subject, "subject", "", "Sigstore certificate identity subject (required for cosign)")
 	return cmd
 }
 
