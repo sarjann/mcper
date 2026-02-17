@@ -64,8 +64,8 @@ func TestGenericJSONAdapter_NestedKeys(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "settings.json")
 
-	// Simulate VS Code-style nested config: {"mcp": {"servers": {...}}}
-	adapter := NewGenericJSONAdapter("vscode", configPath, dir, []string{"mcp", "servers"}, nil, nil)
+	// Test nested key path support (e.g., {"mcp": {"servers": {...}}})
+	adapter := NewGenericJSONAdapter("nested", configPath, dir, []string{"mcp", "servers"}, nil, nil)
 
 	ctx := context.Background()
 	servers := map[string]model.MCPServerSpec{
@@ -197,16 +197,49 @@ func TestZedSpecToConfig(t *testing.T) {
 	}
 	config := zedSpecToConfig(spec)
 
-	cmd, ok := config["command"].(map[string]any)
+	cmd, ok := config["command"].(string)
 	if !ok {
-		t.Fatal("expected command map")
+		t.Fatal("expected command to be a string (flat format)")
 	}
-	if cmd["path"] != "npx" {
-		t.Errorf("expected path 'npx', got %v", cmd["path"])
+	if cmd != "npx" {
+		t.Errorf("expected command 'npx', got %v", cmd)
+	}
+	args := toStringSlice(config["args"])
+	if len(args) != 2 || args[0] != "-y" || args[1] != "@vercel/mcp" {
+		t.Errorf("expected args [-y @vercel/mcp], got %v", args)
+	}
+}
+
+func TestZedSpecToConfig_NoArgs(t *testing.T) {
+	spec := model.MCPServerSpec{
+		Transport: model.ServerTransportSTDIO,
+		Command:   "myserver",
+	}
+	config := zedSpecToConfig(spec)
+
+	if config["command"] != "myserver" {
+		t.Errorf("expected command 'myserver', got %v", config["command"])
+	}
+	if _, ok := config["args"]; ok {
+		t.Error("expected no args key when args is empty")
 	}
 }
 
 func TestZedConfigToSpec(t *testing.T) {
+	cfg := map[string]any{
+		"command": "npx",
+		"args":    []any{"-y", "@vercel/mcp"},
+	}
+	spec := zedConfigToSpec(cfg)
+	if spec.Command != "npx" {
+		t.Errorf("expected command 'npx', got %q", spec.Command)
+	}
+	if len(spec.Args) != 2 || spec.Args[0] != "-y" {
+		t.Errorf("expected args [-y @vercel/mcp], got %v", spec.Args)
+	}
+}
+
+func TestZedConfigToSpec_Legacy(t *testing.T) {
 	cfg := map[string]any{
 		"command": map[string]any{
 			"path": "npx",
@@ -275,5 +308,51 @@ func TestSetNestedMap(t *testing.T) {
 	}
 	if _, ok := servers["test"]; !ok {
 		t.Error("expected test server in result")
+	}
+}
+
+func TestOpencodeSpecToConfig(t *testing.T) {
+	spec := model.MCPServerSpec{
+		Transport: model.ServerTransportSTDIO,
+		Command:   "npx",
+		Args:      []string{"-y", "@vercel/mcp"},
+	}
+	config := opencodeSpecToConfig(spec)
+
+	if config["type"] != "local" {
+		t.Errorf("expected type 'local', got %v", config["type"])
+	}
+	cmd := toStringSlice(config["command"])
+	if len(cmd) != 3 || cmd[0] != "npx" || cmd[1] != "-y" || cmd[2] != "@vercel/mcp" {
+		t.Errorf("expected command [npx -y @vercel/mcp], got %v", cmd)
+	}
+}
+
+func TestOpencodeSpecToConfig_HTTP(t *testing.T) {
+	spec := model.MCPServerSpec{
+		Transport: model.ServerTransportHTTP,
+		URL:       "https://mcp.example.com",
+	}
+	config := opencodeSpecToConfig(spec)
+
+	if config["type"] != "remote" {
+		t.Errorf("expected type 'remote', got %v", config["type"])
+	}
+	if config["url"] != "https://mcp.example.com" {
+		t.Errorf("expected url, got %v", config["url"])
+	}
+}
+
+func TestOpencodeConfigToSpec(t *testing.T) {
+	cfg := map[string]any{
+		"type":    "local",
+		"command": []any{"npx", "-y", "@vercel/mcp"},
+	}
+	spec := opencodeConfigToSpec(cfg)
+	if spec.Command != "npx" {
+		t.Errorf("expected command 'npx', got %q", spec.Command)
+	}
+	if len(spec.Args) != 2 || spec.Args[0] != "-y" {
+		t.Errorf("expected args [-y @vercel/mcp], got %v", spec.Args)
 	}
 }

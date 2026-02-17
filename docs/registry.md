@@ -208,7 +208,18 @@ mcper install vercel-mcp
 mcper install vercel-mcp --target claude,cursor
 ```
 
-Supported clients: `claude` (Claude Code), `claude-desktop`, `codex`, `cursor`, `vscode`, `gemini`, `zed`, `opencode`.
+Supported clients:
+
+| Target | Client | Config file | Server key |
+|--------|--------|-------------|------------|
+| `claude` | Claude Code | `~/.claude/settings.local.json` | `mcpServers` |
+| `claude-desktop` | Claude Desktop | `claude_desktop_config.json` | `mcpServers` |
+| `codex` | Codex CLI | `~/.codex/config.toml` | `[mcp_servers]` |
+| `cursor` | Cursor | `~/.cursor/mcp.json` | `mcpServers` |
+| `vscode` | VS Code | `mcp.json` | `servers` |
+| `gemini` | Gemini CLI | `~/.gemini/settings.json` | `mcpServers` |
+| `zed` | Zed | `settings.json` | `context_servers` |
+| `opencode` | OpenCode | `opencode.json` | `mcp` |
 
 ## Validation rules
 

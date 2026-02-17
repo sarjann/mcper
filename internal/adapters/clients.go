@@ -75,8 +75,8 @@ func knownClients() []clientDef {
 			target:     model.TargetVSCode,
 			label:      "VS Code",
 			detectDirs: vscodeDetectDirs(),
-			configPath: vscodeConfigPath(),
-			serverKeys: []string{"mcp", "servers"},
+			configPath: vscodeMCPConfigPath(),
+			serverKeys: []string{"servers"},
 		},
 		{
 			target:     model.TargetGemini,
@@ -100,8 +100,10 @@ func knownClients() []clientDef {
 			target:     model.TargetOpenCode,
 			label:      "OpenCode",
 			detectDirs: []string{"~/.config/opencode"},
-			configPath: "~/.config/opencode/config.json",
-			serverKeys: []string{"mcpServers"},
+			configPath: "~/.config/opencode/opencode.json",
+			serverKeys: []string{"mcp"},
+			toConfig:   opencodeSpecToConfig,
+			fromConfig: opencodeConfigToSpec,
 		},
 	}
 }
@@ -164,12 +166,12 @@ func vscodeDetectDirs() []string {
 	}
 }
 
-func vscodeConfigPath() string {
+func vscodeMCPConfigPath() string {
 	switch runtime.GOOS {
 	case "darwin":
-		return "~/Library/Application Support/Code/User/settings.json"
+		return "~/Library/Application Support/Code/User/mcp.json"
 	default:
-		return "~/.config/Code/User/settings.json"
+		return "~/.config/Code/User/mcp.json"
 	}
 }
 
@@ -197,12 +199,11 @@ func zedSpecToConfig(spec model.MCPServerSpec) map[string]any {
 	if spec.Transport == model.ServerTransportHTTP {
 		return map[string]any{"url": spec.URL}
 	}
-	return map[string]any{
-		"command": map[string]any{
-			"path": spec.Command,
-			"args": spec.Args,
-		},
+	out := map[string]any{"command": spec.Command}
+	if len(spec.Args) > 0 {
+		out["args"] = spec.Args
 	}
+	return out
 }
 
 func zedConfigToSpec(cfg map[string]any) model.MCPServerSpec {
@@ -210,11 +211,48 @@ func zedConfigToSpec(cfg map[string]any) model.MCPServerSpec {
 		return model.MCPServerSpec{Transport: model.ServerTransportHTTP, URL: url}
 	}
 	s := model.MCPServerSpec{Transport: model.ServerTransportSTDIO}
+	// New flat format: {"command": "npx", "args": [...]}
+	if cmd, ok := cfg["command"].(string); ok {
+		s.Command = cmd
+		s.Args = toStringSlice(cfg["args"])
+		return s
+	}
+	// Legacy nested format: {"command": {"path": "npx", "args": [...]}}
 	if cmdMap, ok := toMap(cfg["command"]); ok {
 		if path, ok := cmdMap["path"].(string); ok {
 			s.Command = path
 		}
 		s.Args = toStringSlice(cmdMap["args"])
+	}
+	return s
+}
+
+// OpenCode converters
+// OpenCode uses: {"command": ["npx", "arg1"], "type": "local", "environment": {...}}
+
+func opencodeSpecToConfig(spec model.MCPServerSpec) map[string]any {
+	out := map[string]any{}
+	if spec.Transport == model.ServerTransportHTTP {
+		out["type"] = "remote"
+		out["url"] = spec.URL
+	} else {
+		out["type"] = "local"
+		cmd := []string{spec.Command}
+		cmd = append(cmd, spec.Args...)
+		out["command"] = cmd
+	}
+	return out
+}
+
+func opencodeConfigToSpec(cfg map[string]any) model.MCPServerSpec {
+	if url, ok := cfg["url"].(string); ok && url != "" {
+		return model.MCPServerSpec{Transport: model.ServerTransportHTTP, URL: url}
+	}
+	s := model.MCPServerSpec{Transport: model.ServerTransportSTDIO}
+	cmdSlice := toStringSlice(cfg["command"])
+	if len(cmdSlice) > 0 {
+		s.Command = cmdSlice[0]
+		s.Args = cmdSlice[1:]
 	}
 	return s
 }

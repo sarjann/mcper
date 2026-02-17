@@ -56,14 +56,12 @@ func (a *ClaudeAdapter) UpsertServers(ctx context.Context, servers map[string]mo
 	if err != nil {
 		return err
 	}
-	mcp, ok := toMap(raw["mcp_servers"])
-	if !ok {
-		mcp = map[string]any{}
-	}
+	mcp := claudeMCPServers(raw)
 	for name, spec := range servers {
 		mcp[name] = serverSpecToConfig(spec)
 	}
-	raw["mcp_servers"] = mcp
+	raw["mcpServers"] = mcp
+	delete(raw, "mcp_servers")
 	return a.writeRaw(raw)
 }
 
@@ -73,14 +71,15 @@ func (a *ClaudeAdapter) RemoveServers(ctx context.Context, names []string) error
 	if err != nil {
 		return err
 	}
-	mcp, ok := toMap(raw["mcp_servers"])
-	if !ok {
+	mcp := claudeMCPServers(raw)
+	if len(mcp) == 0 {
 		return nil
 	}
 	for _, name := range names {
 		delete(mcp, name)
 	}
-	raw["mcp_servers"] = mcp
+	raw["mcpServers"] = mcp
+	delete(raw, "mcp_servers")
 	return a.writeRaw(raw)
 }
 
@@ -93,8 +92,8 @@ func (a *ClaudeAdapter) ListServers(ctx context.Context) (map[string]model.MCPSe
 		}
 		return nil, err
 	}
-	mcp, ok := toMap(raw["mcp_servers"])
-	if !ok {
+	mcp := claudeMCPServers(raw)
+	if len(mcp) == 0 {
 		return map[string]model.MCPServerSpec{}, nil
 	}
 	result := make(map[string]model.MCPServerSpec, len(mcp))
@@ -106,6 +105,17 @@ func (a *ClaudeAdapter) ListServers(ctx context.Context) (map[string]model.MCPSe
 		result[name] = configToServerSpec(cfgMap)
 	}
 	return result, nil
+}
+
+// claudeMCPServers reads servers from mcpServers (preferred) or mcp_servers (legacy).
+func claudeMCPServers(raw map[string]any) map[string]any {
+	if mcp, ok := toMap(raw["mcpServers"]); ok {
+		return mcp
+	}
+	if mcp, ok := toMap(raw["mcp_servers"]); ok {
+		return mcp
+	}
+	return map[string]any{}
 }
 
 func (a *ClaudeAdapter) readRaw() (map[string]any, error) {
