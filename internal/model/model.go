@@ -7,9 +7,15 @@ const (
 	TrustModeHash         = "hash"
 	SourceTypeTap         = "tap"
 	SourceTypeDirect      = "direct"
-	TargetCodex           = "codex"
-	TargetClaude          = "claude"
-	TargetAll             = "all"
+	TargetCodex         = "codex"
+	TargetClaude        = "claude"
+	TargetClaudeDesktop = "claude-desktop"
+	TargetCursor        = "cursor"
+	TargetVSCode        = "vscode"
+	TargetGemini        = "gemini"
+	TargetZed           = "zed"
+	TargetOpenCode      = "opencode"
+	TargetAll           = "all"
 	DefaultTapName        = "official"
 	DefaultTapURL         = "https://github.com/sarjann/mcp-registry.git"
 	DefaultTapDescription = "Official mcper registry"
@@ -77,13 +83,20 @@ type IndexVersion struct {
 	SHA256       string `json:"sha256,omitempty"`
 }
 
+type SetupCommand struct {
+	Run         []string `json:"run"`
+	Pattern     string   `json:"pattern,omitempty"`
+	Description string   `json:"description,omitempty"`
+}
+
 type PackageManifest struct {
-	SchemaVersion int                      `json:"schema_version"`
-	Name          string                   `json:"name"`
-	Version       string                   `json:"version"`
-	Description   string                   `json:"description,omitempty"`
-	MCPServers    map[string]MCPServerSpec `json:"mcp_servers"`
-	Compatibility Compatibility            `json:"compatibility,omitempty"`
+	SchemaVersion int                        `json:"schema_version"`
+	Name          string                     `json:"name"`
+	Version       string                     `json:"version"`
+	Description   string                     `json:"description,omitempty"`
+	MCPServers    map[string]MCPServerSpec   `json:"mcp_servers"`
+	SetupCommands map[string]SetupCommand    `json:"setup_commands,omitempty"`
+	Compatibility Compatibility              `json:"compatibility,omitempty"`
 }
 
 type Compatibility struct {

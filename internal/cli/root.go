@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -18,6 +19,18 @@ func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcper",
 		Short: "Homebrew-style MCP package manager for Codex and Claude Code",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			in := cmd.InOrStdin()
+			out := cmd.OutOrStdout()
+			if !isInteractiveSession(in, out) {
+				return cmd.Help()
+			}
+			mgr, err := service.NewManager(in, out)
+			if err != nil {
+				return err
+			}
+			return runTUI(cmd.Context(), in, out, mgr)
+		},
 	}
 	cmd.CompletionOptions.DisableDefaultCmd = true
 
@@ -40,6 +53,26 @@ func NewRootCmd() *cobra.Command {
 
 func managerOrDie() (*service.Manager, error) {
 	return service.NewManager(os.Stdin, os.Stdout)
+}
+
+func isInteractiveSession(in io.Reader, out io.Writer) bool {
+	inFile, ok := in.(*os.File)
+	if !ok {
+		return false
+	}
+	outFile, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	inInfo, err := inFile.Stat()
+	if err != nil {
+		return false
+	}
+	outInfo, err := outFile.Stat()
+	if err != nil {
+		return false
+	}
+	return inInfo.Mode()&os.ModeCharDevice != 0 && outInfo.Mode()&os.ModeCharDevice != 0
 }
 
 func newSearchCmd() *cobra.Command {
@@ -72,6 +105,7 @@ func newSearchCmd() *cobra.Command {
 func newInstallCmd() *cobra.Command {
 	var tap string
 	var target string
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "install <name[@version]>",
@@ -88,6 +122,7 @@ func newInstallCmd() *cobra.Command {
 				Version: ver,
 				Tap:     tap,
 				Target:  target,
+				Force:   force,
 			})
 			if err != nil {
 				return err
@@ -97,13 +132,15 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&tap, "tap", "", "Tap name (default: official)")
-	cmd.Flags().StringVar(&target, "target", model.TargetAll, "Target config(s): codex, claude, all, or comma-separated")
+	cmd.Flags().StringVar(&target, "target", model.TargetAll, "Target config(s): all (detected clients), or comma-separated (claude, codex, claude-desktop, cursor, vscode, gemini, zed, opencode)")
+	cmd.Flags().BoolVar(&force, "force", false, "Skip conflict detection and overwrite existing servers")
 	return cmd
 }
 
 func newInstallURLCmd() *cobra.Command {
 	var target string
 	var yes bool
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "install-url <url-or-path>",
@@ -118,6 +155,7 @@ func newInstallURLCmd() *cobra.Command {
 				URL:    args[0],
 				Target: target,
 				Yes:    yes,
+				Force:  force,
 			})
 			if err != nil {
 				return err
@@ -126,8 +164,9 @@ func newInstallURLCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&target, "target", model.TargetAll, "Target config(s): codex, claude, all, or comma-separated")
+	cmd.Flags().StringVar(&target, "target", model.TargetAll, "Target config(s): all (detected clients), or comma-separated (claude, codex, claude-desktop, cursor, vscode, gemini, zed, opencode)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Trust direct source without interactive prompt")
+	cmd.Flags().BoolVar(&force, "force", false, "Skip conflict detection and overwrite existing servers")
 	return cmd
 }
 

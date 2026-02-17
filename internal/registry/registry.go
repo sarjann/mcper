@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -356,6 +357,16 @@ func validateManifest(m model.PackageManifest) error {
 			}
 		default:
 			return fmt.Errorf("server %q has unsupported transport %q", name, server.Transport)
+		}
+	}
+	for envVar, sc := range m.SetupCommands {
+		if len(sc.Run) == 0 {
+			return fmt.Errorf("setup_command for %q has empty run", envVar)
+		}
+		if sc.Pattern != "" {
+			if _, err := regexp.Compile(sc.Pattern); err != nil {
+				return fmt.Errorf("setup_command for %q has invalid pattern: %w", envVar, err)
+			}
 		}
 	}
 	return nil

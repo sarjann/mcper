@@ -23,12 +23,14 @@ import (
 )
 
 type Manager struct {
-	store    *state.Store
-	registry *registry.Client
-	secret   secrets.Store
-	adapters map[string]adapters.Adapter
-	stdin    io.Reader
-	stdout   io.Writer
+	store         *state.Store
+	registry      *registry.Client
+	secret        secrets.Store
+	adapters      map[string]adapters.Adapter
+	stdin         io.Reader
+	stdout        io.Writer
+	setupTimeout  time.Duration
+	isInteractive func() bool
 }
 
 func NewManager(stdin io.Reader, stdout io.Writer) (*Manager, error) {
@@ -36,25 +38,20 @@ func NewManager(stdin io.Reader, stdout io.Writer) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	codexAdapter, err := adapters.NewCodexAdapter()
-	if err != nil {
-		return nil, err
-	}
-	claudeAdapter, err := adapters.NewClaudeAdapter()
+	detected, err := adapters.DetectedAdapters()
 	if err != nil {
 		return nil, err
 	}
 
 	return &Manager{
-		store:    st,
-		registry: registry.NewClient(),
-		secret:   secrets.NewKeyringStore(),
-		adapters: map[string]adapters.Adapter{
-			model.TargetCodex:  codexAdapter,
-			model.TargetClaude: claudeAdapter,
-		},
-		stdin:  stdin,
-		stdout: stdout,
+		store:         st,
+		registry:      registry.NewClient(),
+		secret:        secrets.NewKeyringStore(),
+		adapters:      detected,
+		stdin:         stdin,
+		stdout:        stdout,
+		setupTimeout:  30 * time.Second,
+		isInteractive: defaultIsInteractive,
 	}, nil
 }
 
@@ -63,12 +60,14 @@ type InstallRequest struct {
 	Version string
 	Tap     string
 	Target  string
+	Force   bool
 }
 
 type InstallURLRequest struct {
 	URL    string
 	Target string
 	Yes    bool
+	Force  bool
 }
 
 func (m *Manager) InstallFromTap(ctx context.Context, req InstallRequest) (model.InstalledPackage, error) {
@@ -94,7 +93,7 @@ func (m *Manager) InstallFromTap(ctx context.Context, req InstallRequest) (model
 	installed, err := m.applyInstall(ctx, st, resolved.Manifest, resolved.ManifestDigest, model.SourceRef{
 		Type: model.SourceTypeTap,
 		Tap:  tap.Name,
-	}, req.Target)
+	}, req.Target, req.Force)
 	if err != nil {
 		return model.InstalledPackage{}, err
 	}
@@ -110,6 +109,9 @@ func (m *Manager) InstallFromTap(ctx context.Context, req InstallRequest) (model
 	st.Installed[installed.Name] = installed
 	if err := m.store.Save(st); err != nil {
 		return model.InstalledPackage{}, err
+	}
+	if results := m.runSetupCommands(ctx, installed.Name, resolved.Manifest); len(results) > 0 {
+		formatSetupSummary(m.stdout, installed.Name, results, installed.Targets)
 	}
 	return installed, nil
 }
@@ -146,7 +148,7 @@ func (m *Manager) InstallFromURL(ctx context.Context, req InstallURLRequest) (mo
 	installed, err := m.applyInstall(ctx, st, resolved.Manifest, resolved.ManifestDigest, model.SourceRef{
 		Type: model.SourceTypeDirect,
 		URL:  req.URL,
-	}, req.Target)
+	}, req.Target, req.Force)
 	if err != nil {
 		return model.InstalledPackage{}, err
 	}
@@ -163,13 +165,33 @@ func (m *Manager) InstallFromURL(ctx context.Context, req InstallURLRequest) (mo
 	if err := m.store.Save(st); err != nil {
 		return model.InstalledPackage{}, err
 	}
+	if results := m.runSetupCommands(ctx, installed.Name, resolved.Manifest); len(results) > 0 {
+		formatSetupSummary(m.stdout, installed.Name, results, installed.Targets)
+	}
 	return installed, nil
 }
 
-func (m *Manager) applyInstall(ctx context.Context, st model.State, manifest model.PackageManifest, digest string, source model.SourceRef, target string) (model.InstalledPackage, error) {
+func (m *Manager) applyInstall(ctx context.Context, st model.State, manifest model.PackageManifest, digest string, source model.SourceRef, target string, force bool) (model.InstalledPackage, error) {
 	targets, err := m.resolveTargets(target)
 	if err != nil {
 		return model.InstalledPackage{}, err
+	}
+
+	if !force {
+		plan, err := buildInstallPlan(ctx, targets, m.adapters, manifest.MCPServers)
+		if err != nil {
+			return model.InstalledPackage{}, err
+		}
+		if plan.NeedsPrompt() {
+			formatInstallPlan(m.stdout, plan)
+			approved, err := m.promptConfirmInstall()
+			if err != nil {
+				return model.InstalledPackage{}, err
+			}
+			if !approved {
+				return model.InstalledPackage{}, errors.New("install canceled")
+			}
+		}
 	}
 
 	applied := make([]adapters.Adapter, 0, len(targets))
@@ -321,7 +343,7 @@ func (m *Manager) Upgrade(ctx context.Context, name string, allowMajor bool) ([]
 		if _, err := m.applyInstall(ctx, st, resolved.Manifest, resolved.ManifestDigest, model.SourceRef{
 			Type: model.SourceTypeTap,
 			Tap:  tap.Name,
-		}, strings.Join(pkg.Targets, ",")); err != nil {
+		}, strings.Join(pkg.Targets, ","), true); err != nil {
 			return nil, err
 		}
 
@@ -536,7 +558,15 @@ func (m *Manager) SecretUnset(pkg, key string) error {
 func (m *Manager) resolveTargets(target string) ([]string, error) {
 	target = strings.TrimSpace(target)
 	if target == "" || target == model.TargetAll {
-		return []string{model.TargetCodex, model.TargetClaude}, nil
+		targets := make([]string, 0, len(m.adapters))
+		for name := range m.adapters {
+			targets = append(targets, name)
+		}
+		sort.Strings(targets)
+		if len(targets) == 0 {
+			return nil, errors.New("no AI clients detected; install a supported client first")
+		}
+		return targets, nil
 	}
 
 	parts := strings.Split(target, ",")
@@ -547,8 +577,8 @@ func (m *Manager) resolveTargets(target string) ([]string, error) {
 		if p == "" {
 			continue
 		}
-		if p != model.TargetCodex && p != model.TargetClaude {
-			return nil, fmt.Errorf("unknown target %q", p)
+		if _, ok := m.adapters[p]; !ok {
+			return nil, fmt.Errorf("unknown or undetected target %q", p)
 		}
 		if !seen[p] {
 			seen[p] = true
@@ -559,6 +589,34 @@ func (m *Manager) resolveTargets(target string) ([]string, error) {
 		return nil, errors.New("no valid targets specified")
 	}
 	return out, nil
+}
+
+// DetectedTargets returns the names of all detected AI clients.
+func (m *Manager) DetectedTargets() []string {
+	names := make([]string, 0, len(m.adapters))
+	for name := range m.adapters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (m *Manager) promptConfirmInstall() (bool, error) {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false, fmt.Errorf("inspect stdin: %w", err)
+	}
+	if fi.Mode()&os.ModeCharDevice == 0 {
+		return false, errors.New("conflict detected; use --force to overwrite in non-interactive mode")
+	}
+
+	fmt.Fprint(m.stdout, "Proceed? Type 'yes' to continue: ")
+	reader := bufio.NewReader(m.stdin)
+	resp, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+	return strings.EqualFold(strings.TrimSpace(resp), "yes"), nil
 }
 
 func (m *Manager) promptTrust(url string) (bool, error) {
@@ -578,6 +636,14 @@ func (m *Manager) promptTrust(url string) (bool, error) {
 		return false, fmt.Errorf("read trust response: %w", err)
 	}
 	return strings.EqualFold(strings.TrimSpace(resp), "yes"), nil
+}
+
+func defaultIsInteractive() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 func keys(m map[string]model.MCPServerSpec) []string {
