@@ -1,42 +1,51 @@
 # mcper
 
-`mcper` is a Homebrew-style MCP package manager for Codex and Claude Code.
+`mcper` is a Homebrew-style MCP package manager that auto-detects your AI clients and wires up MCP servers for you.
 
-It manages install, upgrade, removal, integrity checks, and local config wiring for MCP server definitions.
+Supports Claude Code, Claude Desktop, Codex, Cursor, VS Code, Gemini CLI, Zed, and OpenCode.
 
-## Features (v1)
-
-- CLI-first package lifecycle (`install`, `upgrade`, `remove`, `list`)
-- Registry model with default tap plus custom taps (`tap add/remove/list`)
-- Direct URL installs with explicit trust approval (`install-url`)
-- Codex + Claude Code local config integration
-- Hash-pinned registry verification
-- Keychain-backed secrets (`secret set/unset`)
-- Health checks (`doctor`) and export (`export --format lock|sbom`)
-
-## Build
+## Install
 
 ```bash
+go install github.com/sarjann/mcper/cmd/mcper@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/sarjann/mcper.git
+cd mcper
 go build -o mcper ./cmd/mcper
 ```
 
 ## Quick Start
 
 ```bash
-# show taps
-./mcper tap list
+# search for packages
+mcper search vercel
 
-# search/install from default official tap
-./mcper search convex
-./mcper install convex
+# install — auto-detects your AI clients
+mcper install vercel-mcp
 
-# add a local tap (optional)
-./mcper tap add local /path/to/registry
+# install to specific clients only
+mcper install vercel-mcp --target claude,cursor
 
-# inspect and health-check
-./mcper list
-./mcper doctor
+# manage secrets
+mcper secret set vercel-mcp VERCEL_TOKEN
+
+# health check
+mcper doctor
 ```
+
+## Features
+
+- Auto-detects installed AI clients and writes configs to all of them
+- Post-install setup commands to obtain API tokens interactively
+- Registry model with default tap plus custom taps (`tap add/remove/list`)
+- Direct URL installs with explicit trust approval (`install-url`)
+- Hash-pinned manifest verification
+- Keychain-backed secrets (`secret set/unset`)
+- Health checks (`doctor`) and export (`export --format lock|sbom`)
 
 ## Integrity Model
 
