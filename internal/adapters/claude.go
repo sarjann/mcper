@@ -33,21 +33,7 @@ func (a *ClaudeAdapter) Name() string { return model.TargetClaude }
 func (a *ClaudeAdapter) Path() string { return a.path }
 
 func detectClaudeSettingsPath() (string, error) {
-	local, err := paths.ExpandHome("~/.claude/settings.local.json")
-	if err != nil {
-		return "", err
-	}
-	global, err := paths.ExpandHome("~/.claude/settings.json")
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(local); err == nil {
-		return local, nil
-	}
-	if _, err := os.Stat(global); err == nil {
-		return global, nil
-	}
-	return local, nil
+	return paths.ExpandHome("~/.claude.json")
 }
 
 func (a *ClaudeAdapter) UpsertServers(ctx context.Context, servers map[string]model.MCPServerSpec) error {
